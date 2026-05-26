@@ -51,7 +51,7 @@ jobs:
               --build-arg NEXT_PUBLIC_JAVA_API_URL="http://api-java:8080" \
               --build-arg NEXT_PUBLIC_API_PYTHON_URL="http://api-python:8083" \
               --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}" \
-              --build-arg NEXT_PUBLIC_WEBSOCKET_URL="http://api-java:8080/ws-petdex" \
+              --build-arg NEXT_PUBLIC_WEBSOCKET_URL="${{ secrets.NEXT_PUBLIC_WEBSOCKET_URL }}" \
               -t ${{ secrets.DOCKERHUB_USERNAME }}/petdex-web:${{ env.BRANCH_NAME }} .
             docker push ${{ secrets.DOCKERHUB_USERNAME }}/petdex-web:${{ env.BRANCH_NAME }}
 
