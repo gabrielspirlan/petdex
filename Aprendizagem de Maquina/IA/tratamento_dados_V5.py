@@ -1,12 +1,10 @@
 import pandas as pd
 import os
+import joblib
+from sklearn.preprocessing import LabelEncoder
 
 # Nesse arquivo ele basicamente é a "faxina" inicial. Ele pega os dados brutos 
-# (em inglês e medidas americanas) e os deixa prontos para o Brasil.
-# Ele converte Libras para Quilos e Milhas para Quilômetros. Além de criar a
-# coluna de porte do animal e calcula a RER (gasto calórico), garantindo que 
-# cães SRD também tenham dados técnicos para serem avaliados
-
+# e os deixa prontos para o Brasil e prepara as colunas categóricas para o Machine Learning.
 
 PATH_BASES = 'Base de Dados'
 
@@ -20,19 +18,25 @@ try:
     for col in num_cols:
         df[col] = df[col].fillna(df[col].median())
 
-    cat_cols = ['Sex', 'Diet', 'Food Brand', 'Medications', 'Seizures', 'Daily Activity Level', 'Healthy']
+    cat_cols = ['Sex', 'Diet', 'Food Brand', 'Medications', 'Seizures', 'Daily Activity Level', 'Owner Activity Level', 'Healthy']
     for col in cat_cols:
-        df[col] = df[col].fillna(df[col].mode()[0])
+        if col in df.columns:
+            df[col] = df[col].fillna(df[col].mode()[0])
 
     # --- 2. TRADUÇÃO DO CONTEÚDO (LINHAS) ---
-    
-    # Dicionário de traduções gerais
     traducoes = {
         'Sex': {'Male': 'Macho', 'Female': 'Fêmea'},
         'Healthy': {'Yes': 'Sim', 'No': 'Não'},
         'Medications': {'Yes': 'Sim', 'No': 'Não'},
         'Seizures': {'Yes': 'Sim', 'No': 'Não'},
         'Daily Activity Level': {
+            'None': 'Nenhum', 
+            'Low': 'Baixo', 
+            'Moderate': 'Moderado', 
+            'Active': 'Ativo', 
+            'Very Active': 'Muito Ativo'
+        },
+        'Owner Activity Level': {
             'None': 'Nenhum', 
             'Low': 'Baixo', 
             'Moderate': 'Moderado', 
@@ -48,7 +52,8 @@ try:
     }
 
     for coluna, mapa in traducoes.items():
-        df[coluna] = df[coluna].map(mapa).fillna(df[coluna])
+        if coluna in df.columns:
+            df[coluna] = df[coluna].map(mapa).fillna(df[coluna])
 
     # --- 3. ENGENHARIA E CONVERSÕES ---
     df['peso_kg'] = (df['Weight (lbs)'] * 0.453592).round(2)
@@ -62,7 +67,7 @@ try:
     
     df['calorias_diarias_RER'] = (70 * (df['peso_kg'] ** 0.75)).round(2)
 
-    # --- 4. RENOMEAÇÃO E SELEÇÃO (Removendo Nivel_Atividade_Dono) ---
+    # --- 4. RENOMEAÇÃO ---
     mapeamento_colunas = {
         'Breed': 'Raca',
         'Sex': 'Sexo',
@@ -74,25 +79,42 @@ try:
         'Hours of Sleep': 'Horas_Sono',
         'Play Time (hrs)': 'Tempo_Brincadeira_Horas',
         'Daily Activity Level': 'Nivel_Atividade_Pet',
+        'Owner Activity Level': 'Nivel_Atividade_Dono',
         'Annual Vet Visits': 'Visitas_Anuais_Veterinario',
         'Healthy': 'Status_Saude'
     }
     
     df_pt = df.rename(columns=mapeamento_colunas)
     
-    # Selecionamos apenas as colunas desejadas (Nivel_Atividade_Dono ficou de fora)
-    colunas_finais = [
-        'Raca', 'Sexo', 'Idade', 'peso_kg', 'porte_animal', 
-        'Nivel_Atividade_Pet', 'Dieta_Atual', 'Marca_Racao', 
-        'caminhada_diaria_km', 'Medicamentos', 'Convulsoes', 'Horas_Sono', 
-        'Tempo_Brincadeira_Horas', 'Visitas_Anuais_Veterinario', 
-        'calorias_diarias_RER', 'Status_Saude'
-    ]
+    # Remover apenas as originais em inglês de peso e distância, mantendo todo o resto
+    if 'Weight (lbs)' in df_pt.columns: df_pt = df_pt.drop(columns=['Weight (lbs)'])
+    if 'Daily Walk Distance (miles)' in df_pt.columns: df_pt = df_pt.drop(columns=['Daily Walk Distance (miles)'])
     
-    df_final = df_pt[colunas_finais]
+    df_final = df_pt.copy()
 
-    # Salva com encoding adequado para Excel no Windows
-    df_final.to_csv('dataset_petdex_final_PT.csv', index=False, encoding='utf-8-sig')
+    # --- 5. ENCODING PARA MACHINE LEARNING ---
+    # Modelos avançados precisam de números. Vamos codificar as colunas de texto (categóricas).
+    colunas_categoricas = df_final.select_dtypes(include=['object']).columns.tolist()
+                           
+    encoders = {}
+    
+    for col in colunas_categoricas:
+        if col in df_final.columns:
+            le = LabelEncoder()
+            # Transforma texto em número
+            df_final[col] = le.fit_transform(df_final[col].astype(str))
+            encoders[col] = le
+            
+    # Salvar os encoders em disco para usarmos na API posteriormente
+    os.makedirs('Modelos Gerados', exist_ok=True)
+    joblib.dump(encoders, os.path.join('Modelos Gerados', 'label_encoders.pkl'))
+    print("✅ LabelEncoders salvos em 'Modelos Gerados/label_encoders.pkl'.")
+
+    # --- 6. SALVANDO BASE FINAL ---
+    os.makedirs('Datasets Tratados', exist_ok=True)
+    caminho_final = os.path.join('Datasets Tratados', 'dataset_petdex_final_PT.csv')
+    df_final.to_csv(caminho_final, index=False, encoding='utf-8-sig')
+    print(f"✅ Base de dados tratada salva em '{caminho_final}'.")
 
 
 except Exception as e:
